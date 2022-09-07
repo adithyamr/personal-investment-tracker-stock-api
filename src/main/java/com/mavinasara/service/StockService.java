@@ -2,8 +2,10 @@ package com.mavinasara.service;
 
 import java.io.IOException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
 import org.openqa.selenium.By;
@@ -25,6 +27,7 @@ import com.mavinasara.model.Account;
 import com.mavinasara.model.Transaction;
 import com.mavinasara.model.zerodha.TradebookResponse;
 
+import dev.turingcomplete.kotlinonetimepassword.GoogleAuthenticator;
 import yahoofinance.YahooFinance;
 
 @Service
@@ -37,7 +40,10 @@ public class StockService {
 	private String apiBaseUrl = "https://console.zerodha.com/api/reports/tradebook?segment=EQ";
 
 	public static void main(String[] args) throws InterruptedException, IOException {
-
+		List<Transaction> transactions = new ArrayList<>();
+		Transaction transaction = new Transaction();
+		transaction.setStockInfo(null);
+		transactions.add(null);
 		addTransaction(null);
 	}
 
@@ -54,6 +60,10 @@ public class StockService {
 	}
 
 	private TradebookResponse getTransactionsFromZerodha(Account account) throws InterruptedException {
+		byte[] secretKey = GoogleAuthenticator.Companion.createRandomSecretAsByteArray();
+		String totp = new GoogleAuthenticator(secretKey).generate(new Date(System.currentTimeMillis()));
+		System.out.println("totp"+ totp);
+		
 		ChromeOptions options = new ChromeOptions();
 		options.setHeadless(true);
 		WebDriver driver = new ChromeDriver(options);
@@ -101,6 +111,9 @@ public class StockService {
 	}
 
 	public static void addTransaction(List<Transaction> transactions) throws IOException, InterruptedException {
+		byte[] secretKey = "ZSIVWGE4ITWC7LQ5T52NGAZARXBHPQRU".getBytes();
+		String totp = new GoogleAuthenticator(secretKey).generate(new Date(System.currentTimeMillis()));
+		
 		ChromeOptions options = new ChromeOptions();
 		options.setHeadless(true);
 		WebDriver driver = new ChromeDriver(options);
@@ -119,10 +132,11 @@ public class StockService {
 
 		Thread.sleep(5000);
 
-		WebElement pin = driver.findElement(By.id("pin"));
+		// WebElement pin = driver.findElement(By.id("pin")); // for id
+		WebElement totpElement = driver.findElement(By.id("totp")); // for id
 		WebElement pinSubmit = driver.findElement(By.xpath("//button[text()='Continue ']"));
 //		wait.until(ExpectedConditions.visibilityOf(pin));
-		pin.sendKeys("271016");
+		totpElement.sendKeys(totp);
 		pinSubmit.click();
 
 		Thread.sleep(5000);
@@ -139,7 +153,7 @@ public class StockService {
 		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 
 		Calendar previousDate = Calendar.getInstance();
-		previousDate.add(Calendar.DATE, -1);
+		previousDate.add(Calendar.DATE, -2);
 
 		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 		String yesterday = sdf.format(previousDate.getTime());
@@ -159,5 +173,5 @@ public class StockService {
 		System.out.println(YahooFinance.get(symbols.toArray(new String[symbols.size()]), false));
 
 	}
-
+	
 }
