@@ -33,11 +33,11 @@ import yahoofinance.YahooFinance;
 @Service
 public class StockService {
 
-	@Value("${zerodha.console.url}")
-	private String url = "https://console.zerodha.com/dashboard";
+	@Value("${zerodha.console.url:https://console.zerodha.com/dashboard}")
+	private String url;
 
-	@Value("${zerodha.api.base.url}")
-	private String apiBaseUrl = "https://console.zerodha.com/api/reports/tradebook?segment=EQ";
+	@Value("${zerodha.api.base.url:https://console.zerodha.com/api/reports/tradebook?segment=EQ}")
+	private String apiBaseUrl;
 
 	public static void main(String[] args) throws InterruptedException, IOException {
 		List<Transaction> transactions = new ArrayList<>();
