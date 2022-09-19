@@ -1,33 +1,42 @@
 package com.mavinasara.model;
 
-import java.util.UUID;
+import java.util.Date;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
+import javax.persistence.Entity;
+import javax.persistence.FetchType;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
 
-@Document(collection = "transaction")
+@Entity
 public class Transaction {
 
 	@Id
-	private UUID transactionId;
+	@GeneratedValue
+	private Long transactionId;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "accountNumber")
 	private Account account;
 
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "symbol")
 	private StockInfo stockInfo;
 
 	private Long quantity;
 
 	private Long price;
 
-	private String date;
+	private Date date;
 
-	private TransactionType status;
+	private TransactionType transactionType;
 
-	public UUID getTransactionId() {
+	public Long getTransactionId() {
 		return transactionId;
 	}
 
-	public void setTransactionId(UUID transactionId) {
+	public void setTransactionId(Long transactionId) {
 		this.transactionId = transactionId;
 	}
 
@@ -63,20 +72,20 @@ public class Transaction {
 		this.price = price;
 	}
 
-	public String getDate() {
+	public Date getDate() {
 		return date;
 	}
 
-	public void setDate(String date) {
+	public void setDate(Date date) {
 		this.date = date;
 	}
 
-	public TransactionType getStatus() {
-		return status;
+	public TransactionType getTransactionType() {
+		return transactionType;
 	}
 
-	public void setStatus(TransactionType status) {
-		this.status = status;
+	public void setTransactionType(TransactionType transactionType) {
+		this.transactionType = transactionType;
 	}
 
 }

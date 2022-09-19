@@ -3,22 +3,26 @@ spring:
     config:
       name: stock-api
       profile: dev
+      label: latest
 
   config:
     import:
     - configserver:http://localhost:9000
 
-  data:
-      mongodb:
-        username: stock
-        password: Stock@123
-        database: stock
-        host: localhost
-        port: 27017
-        authentication-database: admin
-       
+  datasource:
+      url: jdbc:postgresql://localhost:5432/pit
+      username: admin
+      password: Admin@123
+      driverClassName: org.postgresql.Driver
+      hikari:
+        connectionTimeout: 20000
+        maximumPoolSize: 5
+        
+  jpa:
+    hibernate:
+      ddl-auto: update
+      
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
-      
