@@ -19,9 +19,15 @@ public class Account {
 
 	private String pin;
 
+	private String key;
+
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "pan")
 	private UserInfo userInfo;
+
+	@OneToMany
+	@JoinColumn(name = "accountNumber")
+	private List<Holding> holdings;
 
 	@OneToMany
 	@JoinColumn(name = "accountNumber")
@@ -51,12 +57,28 @@ public class Account {
 		this.pin = pin;
 	}
 
+	public String getKey() {
+		return key;
+	}
+
+	public void setKey(String key) {
+		this.key = key;
+	}
+
 	public UserInfo getUserInfo() {
 		return userInfo;
 	}
 
 	public void setUserInfo(UserInfo userInfo) {
 		this.userInfo = userInfo;
+	}
+
+	public List<Holding> getHoldings() {
+		return holdings;
+	}
+
+	public void setHoldings(List<Holding> holdings) {
+		this.holdings = holdings;
 	}
 
 	public List<Transaction> getTransactions() {

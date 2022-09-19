@@ -1,6 +1,6 @@
 package com.mavinasara.model.zerodha;
 
-public class Result {
+public class TradebookResult {
 
 	private String trade_id;
 	private String trade_date;

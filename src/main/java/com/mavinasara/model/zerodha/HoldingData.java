@@ -1,12 +1,10 @@
 package com.mavinasara.model.zerodha;
 
-import java.util.List;
-
-public class Data {
+public class HoldingData {
 
 	private String state;
 
-	private List<Result> result;
+	private HoldingResult result;
 
 	private Pagination pagination;
 
@@ -18,11 +16,11 @@ public class Data {
 		this.state = state;
 	}
 
-	public List<Result> getResult() {
+	public HoldingResult getResult() {
 		return result;
 	}
 
-	public void setResult(List<Result> result) {
+	public void setResult(HoldingResult result) {
 		this.result = result;
 	}
 

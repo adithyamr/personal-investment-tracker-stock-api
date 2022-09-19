@@ -4,7 +4,6 @@ import java.util.Date;
 
 import javax.persistence.Entity;
 import javax.persistence.FetchType;
-import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
@@ -13,8 +12,7 @@ import javax.persistence.ManyToOne;
 public class Transaction {
 
 	@Id
-	@GeneratedValue
-	private Long transactionId;
+	private String transactionId;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "accountNumber")
@@ -32,11 +30,11 @@ public class Transaction {
 
 	private TransactionType transactionType;
 
-	public Long getTransactionId() {
+	public String getTransactionId() {
 		return transactionId;
 	}
 
-	public void setTransactionId(Long transactionId) {
+	public void setTransactionId(String transactionId) {
 		this.transactionId = transactionId;
 	}
 

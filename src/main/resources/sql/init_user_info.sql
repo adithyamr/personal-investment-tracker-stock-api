@@ -1,0 +1,2 @@
+INSERT INTO user_info  (pan,email,first_name,last_name) VALUES ('ANWPR1847F','aadityamr@gmail.com','Adithya','M R');
+INSERT INTO user_info  (pan,email,first_name,last_name) VALUES ('ALFPA7312P','amithaganapathi@gmail.com','Amitha','G');

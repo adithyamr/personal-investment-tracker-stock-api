@@ -3,9 +3,9 @@ package com.mavinasara.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import com.mavinasara.model.StockInfo;
+import com.mavinasara.model.UserInfo;
 
 @Repository
-public interface ShareRepository extends JpaRepository<StockInfo, String> {
+public interface UserInfoRepository extends JpaRepository<UserInfo, String> {
 
 }

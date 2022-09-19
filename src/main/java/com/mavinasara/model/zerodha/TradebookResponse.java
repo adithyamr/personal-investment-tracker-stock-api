@@ -4,7 +4,7 @@ public class TradebookResponse {
 
 	private String status;
 
-	private Data data;
+	private TradebookData data;
 
 	public String getStatus() {
 		return status;
@@ -14,11 +14,11 @@ public class TradebookResponse {
 		this.status = status;
 	}
 
-	public Data getData() {
+	public TradebookData getData() {
 		return data;
 	}
 
-	public void setData(Data data) {
+	public void setData(TradebookData data) {
 		this.data = data;
 	}
 

@@ -1,6 +1,7 @@
 package com.mavinasara.service;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -30,12 +31,18 @@ import org.springframework.web.client.RestTemplate;
 
 import com.google.common.collect.Lists;
 import com.mavinasara.model.Account;
+import com.mavinasara.model.Holding;
 import com.mavinasara.model.StockInfo;
 import com.mavinasara.model.Transaction;
 import com.mavinasara.model.angel.StockInformation;
-import com.mavinasara.model.zerodha.Result;
+import com.mavinasara.model.zerodha.HoldingEquityData;
+import com.mavinasara.model.zerodha.HoldingResponse;
 import com.mavinasara.model.zerodha.TradebookResponse;
-import com.mavinasara.repository.ShareRepository;
+import com.mavinasara.model.zerodha.TradebookResult;
+import com.mavinasara.repository.AccountRepository;
+import com.mavinasara.repository.HoldingRepository;
+import com.mavinasara.repository.StockInfoRepository;
+import com.mavinasara.repository.TransactionRepository;
 
 import dev.turingcomplete.kotlinonetimepassword.GoogleAuthenticator;
 import yahoofinance.Stock;
@@ -55,7 +62,16 @@ public class StockService {
 	private String zerodhaApiTradebookBaseUrl;
 
 	@Autowired
-	private ShareRepository shareRepository;
+	private StockInfoRepository stockInfoRepository;
+
+	@Autowired
+	private HoldingRepository holdingRepository;
+
+	@Autowired
+	private TransactionRepository transactionRepository;
+
+	@Autowired
+	private AccountRepository accountRepository;
 
 	public void fetchAndUpdateStocks() {
 		RestTemplate restTemplate = new RestTemplate();
@@ -74,20 +90,57 @@ public class StockService {
 			if (stock != null && StringUtils.isNotBlank(stock.getName())
 					&& !stock.getName().equalsIgnoreCase(stock.getSymbol().substring(stock.getSymbol().indexOf(".")))) {
 				StockInfo stockInfo = convertStockDetails(stock);
-				shareRepository.saveAndFlush(stockInfo);
+				stockInfoRepository.saveAndFlush(stockInfo);
 			}
 		}
 	}
 
 	public void updateStockDetails() {
-		List<StockInfo> stocks = shareRepository.findAll();
+		List<StockInfo> stocks = stockInfoRepository.findAll();
 		for (StockInfo stockInfo : stocks) {
 			Stock stock = getStockInfo(stockInfo.getSymbol(), false, null, null, null);
 			if (stock == null) {
-				shareRepository.delete(stockInfo);
+				stockInfoRepository.delete(stockInfo);
 			} else {
 				StockInfo updatedStockInfo = convertStockDetails(stock);
-				shareRepository.saveAndFlush(updatedStockInfo);
+				stockInfoRepository.saveAndFlush(updatedStockInfo);
+			}
+		}
+	}
+
+	public void updateHolding(String clientId) throws InterruptedException {
+		Account account = accountRepository.getReferenceById(clientId);
+		HttpHeaders headers = getZerodhaHeader(account);
+
+		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+		Calendar date = Calendar.getInstance();
+
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+		String dateStr = sdf.format(date.getTime());
+
+		RestTemplate restTemplate = new RestTemplate();
+		ResponseEntity<HoldingResponse> holdingResponse = restTemplate.exchange(
+				"https://console.zerodha.com/api/reports/holdings/portfolio?date=" + dateStr, HttpMethod.GET,
+				requestEntity, HoldingResponse.class);
+		if (holdingResponse.getBody() != null && holdingResponse.getBody().getData() != null
+				&& holdingResponse.getBody().getData().getResult() != null
+				&& holdingResponse.getBody().getData().getResult().getEq() != null
+				&& !holdingResponse.getBody().getData().getResult().getEq().isEmpty()) {
+			List<HoldingEquityData> holdings = holdingResponse.getBody().getData().getResult().getEq();
+			for (HoldingEquityData holdingEquityData : holdings) {
+				String symbol = holdingEquityData.getTradingsymbol().replaceAll("*", "");
+				Holding holding = new Holding();
+				holding.setAccount(account);
+				holding.setSymbol(symbol + ".NS");
+				holding.setQuatity(holdingEquityData.getTotal_quantity());
+				holding.setAvergeBuyPrice(BigDecimal.valueOf(holdingEquityData.getBuy_average()));
+				holding.setBuyValue(BigDecimal.valueOf(holdingEquityData.getHoldings_buy_value()));
+				holding.setLastTransactionPrice(BigDecimal.valueOf(holdingEquityData.getLtp()));
+				holding.setPresentValue(BigDecimal.valueOf(holdingEquityData.getClosing_value()));
+				holding.setPnl(BigDecimal.valueOf(holdingEquityData.getUnrealized_profit()));
+				holding.setPnlInPercent(holdingEquityData.getUnrealized_profit_percentage());
+				holdingRepository.save(holding);
 			}
 		}
 	}
@@ -230,8 +283,8 @@ public class StockService {
 
 		if (tradebookResponse.getData() != null && tradebookResponse.getData().getResult() != null
 				&& !tradebookResponse.getData().getResult().isEmpty()) {
-			List<Result> results = tradebookResponse.getData().getResult();
-			for (Result result : results) {
+			List<TradebookResult> results = tradebookResponse.getData().getResult();
+			for (TradebookResult result : results) {
 				result.getExchange();
 			}
 		}
@@ -299,6 +352,44 @@ public class StockService {
 
 		});
 		System.out.println(YahooFinance.get(symbols.toArray(new String[symbols.size()]), false));
+
+	}
+
+	private HttpHeaders getZerodhaHeader(Account account) throws InterruptedException {
+
+		String totp = new GoogleAuthenticator(account.getKey().getBytes())
+				.generate(new Date(System.currentTimeMillis()));
+
+		ChromeOptions options = new ChromeOptions();
+		options.setHeadless(true);
+		WebDriver driver = new ChromeDriver(options);
+
+		driver.get(zerodhaConsoleUrl);
+
+		WebElement username = driver.findElement(By.id("userid"));
+		WebElement password = driver.findElement(By.id("password"));
+		WebElement login = driver.findElement(By.xpath("//button[text()='Login ']"));
+		username.sendKeys(account.getAccountNumber());
+		password.sendKeys(account.getPassword());
+		login.click();
+
+		Thread.sleep(5000);
+
+		// WebElement pin = driver.findElement(By.id("pin"));
+		// pin.sendKeys(account.getPin());
+		WebElement totpElement = driver.findElement(By.id("totp"));
+		totpElement.sendKeys(totp);
+		WebElement pinSubmit = driver.findElement(By.xpath("//button[text()='Continue ']"));
+		pinSubmit.click();
+
+		Thread.sleep(5000);
+
+		HttpHeaders headers = new HttpHeaders();
+		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
+		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
+		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+
+		return headers;
 
 	}
 
