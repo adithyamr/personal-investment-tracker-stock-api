@@ -19,6 +19,8 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.html5.LocalStorage;
+import org.openqa.selenium.html5.SessionStorage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -36,6 +38,7 @@ import com.mavinasara.model.StockInfo;
 import com.mavinasara.model.Transaction;
 import com.mavinasara.model.angel.StockInformation;
 import com.mavinasara.model.zerodha.HoldingEquityData;
+import com.mavinasara.model.zerodha.HoldingRes;
 import com.mavinasara.model.zerodha.HoldingResponse;
 import com.mavinasara.model.zerodha.TradebookResponse;
 import com.mavinasara.model.zerodha.TradebookResult;
@@ -293,15 +296,22 @@ public class StockService {
 		return tradebookResponse;
 	}
 
-	public static void addTransaction(List<Transaction> transactions) throws IOException, InterruptedException {
+	public static void main(String[] arg) throws IOException, InterruptedException {
+
+		String os = System.getProperty("os.name");
+		if (os.contains("Windows")) {
+			System.setProperty("webdriver.chrome.driver",
+					"D://Workspace/Projects/personal-investment-tracker-stock-api/src/main/resources/chromedriver/windows.exe");
+		}
+
 		byte[] secretKey = "ZSIVWGE4ITWC7LQ5T52NGAZARXBHPQRU".getBytes();
 		String totp = new GoogleAuthenticator(secretKey).generate(new Date(System.currentTimeMillis()));
 
 		ChromeOptions options = new ChromeOptions();
 		options.setHeadless(true);
-		WebDriver driver = new ChromeDriver(options);
+		ChromeDriver driver = new ChromeDriver(options);
 
-		driver.get("https://console.zerodha.com/dashboard");
+		driver.get("https://kite.zerodha.com/dashboard");
 
 //		WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(50000));
 
@@ -326,46 +336,62 @@ public class StockService {
 //		WebElement reportMenu = driver.findElement(By.xpath("//*[@id=\"app\"]/div[1]/div/div/div[1]/a[3]"));
 //		wait.until(ExpectedConditions.visibilityOf(reportMenu));
 
+		LocalStorage localStorage = driver.getLocalStorage();
+		Set<String> keySet = localStorage.keySet();
+		for (String key : keySet) {
+			System.out.println(localStorage.getItem(key));
+		}
+
 		RestTemplate restTemplate = new RestTemplate();
 		HttpHeaders headers = new HttpHeaders();
-		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
-		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
+
+		if (driver.manage().getCookies() != null) {
+			headers.add("Cookie", driver.manage().getCookieNamed("kf_session").toString());
+		}
+
+		String enctoken = "enctoken " + localStorage.getItem("__storejs_kite_enctoken").substring(1,
+				localStorage.getItem("__storejs_kite_enctoken").length() - 1);
+		headers.add("authorization", enctoken);
+
+		String uuid = localStorage.getItem("__storejs_kite_app_uuid").substring(1,
+				localStorage.getItem("__storejs_kite_app_uuid").length() - 1);
+		headers.add("x-kite-app-uuid", uuid);
+
+		String userId = localStorage.getItem("__storejs_kite_user_id").substring(1,
+				localStorage.getItem("__storejs_kite_user_id").length() - 1);
+		headers.add("x-kite-userid", userId);
+
+		String publicToken = localStorage.getItem("__storejs_kite_public_token").substring(1,
+				localStorage.getItem("__storejs_kite_public_token").length() - 1);
+		headers.add("x-public_token", publicToken);
+
 		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
 		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 
-		Calendar previousDate = Calendar.getInstance();
-		previousDate.add(Calendar.DATE, -2);
+		ResponseEntity<HoldingRes> response = restTemplate.exchange("https://kite.zerodha.com/oms/portfolio/holdings",
+				HttpMethod.GET, requestEntity, HoldingRes.class);
 
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-		String yesterday = sdf.format(previousDate.getTime());
-
-		ResponseEntity<TradebookResponse> response = restTemplate
-				.exchange("https://console.zerodha.com/api/reports/tradebook?segment=EQ&from_date=" + yesterday
-						+ "&to_date=" + yesterday, HttpMethod.GET, requestEntity, TradebookResponse.class);
-
-		System.out.println(response.getBody());
-
-		TradebookResponse body = response.getBody();
-		List<String> symbols = Lists.newArrayList();
-		body.getData().getResult().forEach(r -> {
-			symbols.add(r.getTradingsymbol() + ".NS");
-
-		});
-		System.out.println(YahooFinance.get(symbols.toArray(new String[symbols.size()]), false));
-
+		HoldingRes body = response.getBody();
+		System.out.println(body);
 	}
 
 	private HttpHeaders getZerodhaHeader(Account account) throws InterruptedException {
+
+		String os = System.getProperty("os.name");
+		if (os.contains("Windows")) {
+			System.setProperty("webdriver.chrome.driver",
+					"D://Workspace/Projects/personal-investment-tracker-stock-api/src/main/resources/chromedriver/windows.exe");
+		}
 
 		String totp = new GoogleAuthenticator(account.getKey().getBytes())
 				.generate(new Date(System.currentTimeMillis()));
 
 		ChromeOptions options = new ChromeOptions();
 		options.setHeadless(true);
-		WebDriver driver = new ChromeDriver(options);
+		ChromeDriver driver = new ChromeDriver(options);
 
-		driver.get(zerodhaConsoleUrl);
+		driver.get("https://kite.zerodha.com/dashboard");
 
 		WebElement username = driver.findElement(By.id("userid"));
 		WebElement password = driver.findElement(By.id("password"));
@@ -386,10 +412,21 @@ public class StockService {
 		Thread.sleep(5000);
 
 		HttpHeaders headers = new HttpHeaders();
-		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
-		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
-		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+//		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
+//		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
+//		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
+		LocalStorage localStorage = driver.getLocalStorage();
+		Set<String> keySet = localStorage.keySet();
+		for (String key : keySet) {
+			System.out.println(localStorage.getItem(key));
+		}
+
+		SessionStorage sessionStorage = driver.getSessionStorage();
+		Set<String> keySet2 = sessionStorage.keySet();
+		for (String string : keySet2) {
+			System.out.println(sessionStorage.getItem(string));
+		}
 		return headers;
 
 	}
