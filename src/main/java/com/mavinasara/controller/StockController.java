@@ -45,6 +45,11 @@ public class StockController {
 		stockService.fetchAndUpdateStocks();
 	}
 
+	@PutMapping("/updateHolding")
+	public void updateHolding(@RequestBody String clinetId) throws IOException, InterruptedException {
+		stockService.updateHolding(clinetId);
+	}
+
 	@GetMapping
 	public List<StockInfo> stock(@RequestParam(name = "symbol") String symbol) throws IOException {
 		return null;

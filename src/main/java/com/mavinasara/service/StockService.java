@@ -133,7 +133,8 @@ public class StockService {
 				Holding holding = new Holding();
 				holding.setAccount(account);
 				holding.setSymbol(symbol + ".NS");
-				holding.setQuatity(holdingEquityData.getTotal_quantity());
+				holding.setExchange("NSE");
+				holding.setQuantity(holdingEquityData.getTotal_quantity());
 				holding.setAvergeBuyPrice(BigDecimal.valueOf(holdingEquityData.getBuy_average()));
 				holding.setBuyValue(BigDecimal.valueOf(holdingEquityData.getHoldings_buy_value()));
 				holding.setLastTransactionPrice(BigDecimal.valueOf(holdingEquityData.getLtp()));

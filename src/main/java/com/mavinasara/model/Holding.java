@@ -14,7 +14,9 @@ public class Holding {
 	@Id
 	private String symbol;
 
-	private Integer quatity;
+	private String exchange;
+
+	private Integer quantity;
 
 	private BigDecimal avergeBuyPrice;
 
@@ -40,12 +42,20 @@ public class Holding {
 		this.symbol = symbol;
 	}
 
-	public Integer getQuatity() {
-		return quatity;
+	public String getExchange() {
+		return exchange;
 	}
 
-	public void setQuatity(Integer quatity) {
-		this.quatity = quatity;
+	public void setExchange(String exchange) {
+		this.exchange = exchange;
+	}
+
+	public Integer getQuantity() {
+		return quantity;
+	}
+
+	public void setQuantity(Integer quantity) {
+		this.quantity = quantity;
 	}
 
 	public BigDecimal getAvergeBuyPrice() {
