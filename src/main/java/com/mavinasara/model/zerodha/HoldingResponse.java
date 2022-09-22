@@ -1,10 +1,12 @@
 package com.mavinasara.model.zerodha;
 
+import java.util.List;
+
 public class HoldingResponse {
 
 	private String status;
 
-	private HoldingData data;
+	private List<HoldingData> data;
 
 	public String getStatus() {
 		return status;
@@ -14,17 +16,12 @@ public class HoldingResponse {
 		this.status = status;
 	}
 
-	public HoldingData getData() {
+	public List<HoldingData> getData() {
 		return data;
 	}
 
-	public void setData(HoldingData data) {
+	public void setData(List<HoldingData> data) {
 		this.data = data;
-	}
-
-	@Override
-	public String toString() {
-		return "TradebookResponse [status=" + status + ", data=" + data + "]";
 	}
 
 }

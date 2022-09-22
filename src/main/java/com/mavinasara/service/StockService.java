@@ -20,7 +20,6 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.html5.LocalStorage;
-import org.openqa.selenium.html5.SessionStorage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -37,8 +36,7 @@ import com.mavinasara.model.Holding;
 import com.mavinasara.model.StockInfo;
 import com.mavinasara.model.Transaction;
 import com.mavinasara.model.angel.StockInformation;
-import com.mavinasara.model.zerodha.HoldingEquityData;
-import com.mavinasara.model.zerodha.HoldingRes;
+import com.mavinasara.model.zerodha.HoldingData;
 import com.mavinasara.model.zerodha.HoldingResponse;
 import com.mavinasara.model.zerodha.TradebookResponse;
 import com.mavinasara.model.zerodha.TradebookResult;
@@ -61,8 +59,14 @@ public class StockService {
 	@Value("${zerodha.console.url:https://console.zerodha.com/dashboard}")
 	private String zerodhaConsoleUrl;
 
-	@Value("${zerodha.api.base.url:https://console.zerodha.com/api/reports/tradebook?segment=EQ}")
-	private String zerodhaApiTradebookBaseUrl;
+	@Value("${zerodha.kite.url:https://kite.zerodha.com/dashboard}")
+	private String zerodhaKiteUrl;
+
+	@Value("${zerodha.api.tradebook.url:https://console.zerodha.com/api/reports/tradebook?segment=EQ}")
+	private String zerodhaApiTradebookUrl;
+
+	@Value("${zerodha.api.holding.url:https://kite.zerodha.com/oms/portfolio/holdings}")
+	private String zerodhaApiHoldingUrl;
 
 	@Autowired
 	private StockInfoRepository stockInfoRepository;
@@ -113,37 +117,34 @@ public class StockService {
 
 	public void updateHolding(String clientId) throws InterruptedException {
 		Account account = accountRepository.getReferenceById(clientId);
-		HttpHeaders headers = getZerodhaHeader(account);
+		HttpHeaders headers = getZerodhaHeader(account, true);
 
 		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-
-		Calendar date = Calendar.getInstance();
-
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-		String dateStr = sdf.format(date.getTime());
-
 		RestTemplate restTemplate = new RestTemplate();
-		ResponseEntity<HoldingResponse> holdingResponse = restTemplate.exchange(
-				"https://console.zerodha.com/api/reports/holdings/portfolio?date=" + dateStr, HttpMethod.GET,
-				requestEntity, HoldingResponse.class);
-		if (holdingResponse.getBody() != null && holdingResponse.getBody().getData() != null
-				&& holdingResponse.getBody().getData().getResult() != null
-				&& holdingResponse.getBody().getData().getResult().getEq() != null
-				&& !holdingResponse.getBody().getData().getResult().getEq().isEmpty()) {
-			List<HoldingEquityData> holdings = holdingResponse.getBody().getData().getResult().getEq();
-			for (HoldingEquityData holdingEquityData : holdings) {
-				String symbol = holdingEquityData.getTradingsymbol().replaceAll("*", "");
+
+		ResponseEntity<HoldingResponse> response = restTemplate.exchange(
+				"https://kite.zerodha.com/oms/portfolio/holdings", HttpMethod.GET, requestEntity,
+				HoldingResponse.class);
+
+		HoldingResponse holdingResponse = response.getBody();
+		if (holdingResponse.getData() != null && !holdingResponse.getData().isEmpty()) {
+			List<HoldingData> holdings = holdingResponse.getData();
+			for (HoldingData holdingData : holdings) {
+				String symbol = holdingData.getTradingsymbol().replaceAll("\\*", "");
 				Holding holding = new Holding();
 				holding.setAccount(account);
 				holding.setSymbol(symbol + ".NS");
-				holding.setExchange("NSE");
-				holding.setQuantity(holdingEquityData.getTotal_quantity());
-				holding.setAvergeBuyPrice(BigDecimal.valueOf(holdingEquityData.getBuy_average()));
-				holding.setBuyValue(BigDecimal.valueOf(holdingEquityData.getHoldings_buy_value()));
-				holding.setLastTransactionPrice(BigDecimal.valueOf(holdingEquityData.getLtp()));
-				holding.setPresentValue(BigDecimal.valueOf(holdingEquityData.getClosing_value()));
-				holding.setPnl(BigDecimal.valueOf(holdingEquityData.getUnrealized_profit()));
-				holding.setPnlInPercent(holdingEquityData.getUnrealized_profit_percentage());
+				holding.setExchange(holdingData.getExchange());
+				holding.setQuantity(holdingData.getQuantity());
+				holding.setAvergeBuyPrice(BigDecimal.valueOf(holdingData.getAverage_price()));
+				holding.setBuyValue(BigDecimal.valueOf(holdingData.getAverage_price())
+						.multiply(BigDecimal.valueOf(holdingData.getQuantity())));
+				holding.setLastTransactionPrice(BigDecimal.valueOf(holdingData.getLast_price()));
+				holding.setPresentValue(BigDecimal.valueOf(holdingData.getLast_price())
+						.multiply(BigDecimal.valueOf(holdingData.getQuantity())));
+				holding.setPnl(BigDecimal.valueOf(holdingData.getPnl()));
+				holding.setPnlInPercent(BigDecimal.valueOf(holdingData.getPnl()).divide(holding.getBuyValue())
+						.multiply(BigDecimal.valueOf(100)).doubleValue());
 				holdingRepository.save(holding);
 			}
 		}
@@ -277,7 +278,7 @@ public class StockService {
 		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
 		String yesterday = sdf.format(previousDate.getTime());
 
-		StringBuilder builder = new StringBuilder(zerodhaApiTradebookBaseUrl);
+		StringBuilder builder = new StringBuilder(zerodhaApiTradebookUrl);
 		builder.append("&from_date=").append(yesterday).append("&to_date=").append(yesterday);
 
 		ResponseEntity<TradebookResponse> response = restTemplate.exchange(builder.toString(), HttpMethod.GET,
@@ -296,7 +297,7 @@ public class StockService {
 		return tradebookResponse;
 	}
 
-	public static void main(String[] arg) throws IOException, InterruptedException {
+	private HttpHeaders getZerodhaHeader(Account account, boolean isKite) throws InterruptedException {
 
 		String os = System.getProperty("os.name");
 		if (os.contains("Windows")) {
@@ -304,95 +305,15 @@ public class StockService {
 					"D://Workspace/Projects/personal-investment-tracker-stock-api/src/main/resources/chromedriver/windows.exe");
 		}
 
-		byte[] secretKey = "ZSIVWGE4ITWC7LQ5T52NGAZARXBHPQRU".getBytes();
-		String totp = new GoogleAuthenticator(secretKey).generate(new Date(System.currentTimeMillis()));
-
 		ChromeOptions options = new ChromeOptions();
 		options.setHeadless(true);
 		ChromeDriver driver = new ChromeDriver(options);
 
-		driver.get("https://kite.zerodha.com/dashboard");
-
-//		WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(50000));
-
-		WebElement username = driver.findElement(By.id("userid"));
-		WebElement password = driver.findElement(By.id("password"));
-		WebElement login = driver.findElement(By.xpath("//button[text()='Login ']"));
-		username.sendKeys("ZM3272");
-		password.sendKeys("Adithy@1985");
-		login.click();
-
-		Thread.sleep(5000);
-
-		// WebElement pin = driver.findElement(By.id("pin")); // for id
-		WebElement totpElement = driver.findElement(By.id("totp")); // for id
-		WebElement pinSubmit = driver.findElement(By.xpath("//button[text()='Continue ']"));
-//		wait.until(ExpectedConditions.visibilityOf(pin));
-		totpElement.sendKeys(totp);
-		pinSubmit.click();
-
-		Thread.sleep(5000);
-
-//		WebElement reportMenu = driver.findElement(By.xpath("//*[@id=\"app\"]/div[1]/div/div/div[1]/a[3]"));
-//		wait.until(ExpectedConditions.visibilityOf(reportMenu));
-
-		LocalStorage localStorage = driver.getLocalStorage();
-		Set<String> keySet = localStorage.keySet();
-		for (String key : keySet) {
-			System.out.println(localStorage.getItem(key));
+		if (isKite) {
+			driver.get(zerodhaKiteUrl);
+		} else {
+			driver.get(zerodhaConsoleUrl);
 		}
-
-		RestTemplate restTemplate = new RestTemplate();
-		HttpHeaders headers = new HttpHeaders();
-
-		if (driver.manage().getCookies() != null) {
-			headers.add("Cookie", driver.manage().getCookieNamed("kf_session").toString());
-		}
-
-		String enctoken = "enctoken " + localStorage.getItem("__storejs_kite_enctoken").substring(1,
-				localStorage.getItem("__storejs_kite_enctoken").length() - 1);
-		headers.add("authorization", enctoken);
-
-		String uuid = localStorage.getItem("__storejs_kite_app_uuid").substring(1,
-				localStorage.getItem("__storejs_kite_app_uuid").length() - 1);
-		headers.add("x-kite-app-uuid", uuid);
-
-		String userId = localStorage.getItem("__storejs_kite_user_id").substring(1,
-				localStorage.getItem("__storejs_kite_user_id").length() - 1);
-		headers.add("x-kite-userid", userId);
-
-		String publicToken = localStorage.getItem("__storejs_kite_public_token").substring(1,
-				localStorage.getItem("__storejs_kite_public_token").length() - 1);
-		headers.add("x-public_token", publicToken);
-
-		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
-
-		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-
-		ResponseEntity<HoldingRes> response = restTemplate.exchange("https://kite.zerodha.com/oms/portfolio/holdings",
-				HttpMethod.GET, requestEntity, HoldingRes.class);
-
-		HoldingRes body = response.getBody();
-		System.out.println(body);
-	}
-
-	private HttpHeaders getZerodhaHeader(Account account) throws InterruptedException {
-
-		String os = System.getProperty("os.name");
-		if (os.contains("Windows")) {
-			System.setProperty("webdriver.chrome.driver",
-					"D://Workspace/Projects/personal-investment-tracker-stock-api/src/main/resources/chromedriver/windows.exe");
-		}
-
-		String totp = new GoogleAuthenticator(account.getKey().getBytes())
-				.generate(new Date(System.currentTimeMillis()));
-
-		ChromeOptions options = new ChromeOptions();
-		options.setHeadless(true);
-		ChromeDriver driver = new ChromeDriver(options);
-
-		driver.get("https://kite.zerodha.com/dashboard");
-
 		WebElement username = driver.findElement(By.id("userid"));
 		WebElement password = driver.findElement(By.id("password"));
 		WebElement login = driver.findElement(By.xpath("//button[text()='Login ']"));
@@ -402,31 +323,53 @@ public class StockService {
 
 		Thread.sleep(5000);
 
-		// WebElement pin = driver.findElement(By.id("pin"));
-		// pin.sendKeys(account.getPin());
-		WebElement totpElement = driver.findElement(By.id("totp"));
-		totpElement.sendKeys(totp);
+		if (StringUtils.isBlank(account.getKey())) {
+			WebElement pin = driver.findElement(By.id("pin"));
+			pin.sendKeys(account.getPin());
+		} else {
+			String totp = new GoogleAuthenticator(account.getKey().getBytes())
+					.generate(new Date(System.currentTimeMillis()));
+
+			WebElement totpElement = driver.findElement(By.id("totp"));
+			totpElement.sendKeys(totp);
+		}
+
 		WebElement pinSubmit = driver.findElement(By.xpath("//button[text()='Continue ']"));
 		pinSubmit.click();
 
 		Thread.sleep(5000);
 
 		HttpHeaders headers = new HttpHeaders();
-//		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
-//		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
-//		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 
-		LocalStorage localStorage = driver.getLocalStorage();
-		Set<String> keySet = localStorage.keySet();
-		for (String key : keySet) {
-			System.out.println(localStorage.getItem(key));
+		if (isKite) {
+			LocalStorage localStorage = driver.getLocalStorage();
+
+			if (driver.manage().getCookies() != null) {
+				headers.add("Cookie", driver.manage().getCookieNamed("kf_session").toString());
+			}
+
+			String enctoken = "enctoken " + localStorage.getItem("__storejs_kite_enctoken").substring(1,
+					localStorage.getItem("__storejs_kite_enctoken").length() - 1);
+			headers.add("authorization", enctoken);
+
+			String uuid = localStorage.getItem("__storejs_kite_app_uuid").substring(1,
+					localStorage.getItem("__storejs_kite_app_uuid").length() - 1);
+			headers.add("x-kite-app-uuid", uuid);
+
+			String userId = localStorage.getItem("__storejs_kite_user_id").substring(1,
+					localStorage.getItem("__storejs_kite_user_id").length() - 1);
+			headers.add("x-kite-userid", userId);
+
+			String publicToken = localStorage.getItem("__storejs_kite_public_token").substring(1,
+					localStorage.getItem("__storejs_kite_public_token").length() - 1);
+			headers.add("x-public_token", publicToken);
+
+		} else {
+			headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
+			headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
+			headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
 		}
 
-		SessionStorage sessionStorage = driver.getSessionStorage();
-		Set<String> keySet2 = sessionStorage.keySet();
-		for (String string : keySet2) {
-			System.out.println(sessionStorage.getItem(string));
-		}
 		return headers;
 
 	}

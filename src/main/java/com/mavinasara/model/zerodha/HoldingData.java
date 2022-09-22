@@ -2,39 +2,60 @@ package com.mavinasara.model.zerodha;
 
 public class HoldingData {
 
-	private String state;
+	private String tradingsymbol;
+	private String exchange;
+	private Integer quantity;
+	private Double average_price;
 
-	private HoldingResult result;
+	private Double last_price;
+	private Double pnl;
 
-	private Pagination pagination;
-
-	public String getState() {
-		return state;
+	public String getTradingsymbol() {
+		return tradingsymbol;
 	}
 
-	public void setState(String state) {
-		this.state = state;
+	public void setTradingsymbol(String tradingsymbol) {
+		this.tradingsymbol = tradingsymbol;
 	}
 
-	public HoldingResult getResult() {
-		return result;
+	public String getExchange() {
+		return exchange;
 	}
 
-	public void setResult(HoldingResult result) {
-		this.result = result;
+	public void setExchange(String exchange) {
+		this.exchange = exchange;
 	}
 
-	public Pagination getPagination() {
-		return pagination;
+	public Integer getQuantity() {
+		return quantity;
 	}
 
-	public void setPagination(Pagination pagination) {
-		this.pagination = pagination;
+	public void setQuantity(Integer quantity) {
+		this.quantity = quantity;
 	}
 
-	@Override
-	public String toString() {
-		return "Data [state=" + state + ", result=" + result + ", pagination=" + pagination + "]";
+	public Double getAverage_price() {
+		return average_price;
+	}
+
+	public void setAverage_price(Double average_price) {
+		this.average_price = average_price;
+	}
+
+	public Double getLast_price() {
+		return last_price;
+	}
+
+	public void setLast_price(Double last_price) {
+		this.last_price = last_price;
+	}
+
+	public Double getPnl() {
+		return pnl;
+	}
+
+	public void setPnl(Double pnl) {
+		this.pnl = pnl;
 	}
 
 }
