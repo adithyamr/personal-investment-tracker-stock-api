@@ -2,6 +2,7 @@ package com.mavinasara.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -15,7 +16,6 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -30,11 +30,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import com.google.common.collect.Lists;
 import com.mavinasara.model.Account;
 import com.mavinasara.model.Holding;
 import com.mavinasara.model.StockInfo;
 import com.mavinasara.model.Transaction;
+import com.mavinasara.model.TransactionType;
 import com.mavinasara.model.angel.StockInformation;
 import com.mavinasara.model.zerodha.HoldingData;
 import com.mavinasara.model.zerodha.HoldingResponse;
@@ -87,11 +87,12 @@ public class StockService {
 				Arrays.stream(stockList).filter(s -> s.getExpiry().trim().isBlank()).collect((Collectors.toSet())));
 		stockList = null;
 		for (StockInformation stockInformation : allStocks) {
-			String suffix = "NSE".equalsIgnoreCase(stockInformation.getExch_seg()) ? ".NS" : ".BO";
-			Stock stock = getStockInfo(stockInformation.getName() + suffix, false, null, null, null);
+			String symbol = getStockSymbol(stockInformation.getName(), stockInformation.getExch_seg());
+			Stock stock = getStockInfo(symbol, false, null, null, null);
 
 			if (stock == null && !stockInformation.getName().equalsIgnoreCase(stockInformation.getSymbol())) {
-				stock = getStockInfo(stockInformation.getSymbol() + suffix, false, null, null, null);
+				symbol = getStockSymbol(stockInformation.getSymbol(), stockInformation.getExch_seg());
+				stock = getStockInfo(symbol, false, null, null, null);
 			}
 
 			if (stock != null && StringUtils.isNotBlank(stock.getName())
@@ -122,18 +123,27 @@ public class StockService {
 		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 		RestTemplate restTemplate = new RestTemplate();
 
-		ResponseEntity<HoldingResponse> response = restTemplate.exchange(
-				"https://kite.zerodha.com/oms/portfolio/holdings", HttpMethod.GET, requestEntity,
-				HoldingResponse.class);
+		ResponseEntity<HoldingResponse> response = null;
+		boolean isSuccessfulResponse = false;
+		int retryCount = 0;
+		while (!isSuccessfulResponse || retryCount++ >= 10) {
+			response = restTemplate.exchange(zerodhaApiHoldingUrl, HttpMethod.GET, requestEntity,
+					HoldingResponse.class);
 
-		HoldingResponse holdingResponse = response.getBody();
-		if (holdingResponse.getData() != null && !holdingResponse.getData().isEmpty()) {
-			List<HoldingData> holdings = holdingResponse.getData();
+			if (response != null && response.getStatusCode().is2xxSuccessful()
+					&& "success".equalsIgnoreCase(response.getBody().getStatus())) {
+				isSuccessfulResponse = true;
+			}
+		}
+
+		if (response.getBody() != null && response.getBody().getData() != null
+				&& !response.getBody().getData().isEmpty()) {
+			List<HoldingData> holdings = response.getBody().getData();
 			for (HoldingData holdingData : holdings) {
-				String symbol = holdingData.getTradingsymbol().replaceAll("\\*", "");
+				String symbol = getStockSymbol(holdingData.getExchange(), holdingData.getTradingsymbol());
 				Holding holding = new Holding();
 				holding.setAccount(account);
-				holding.setSymbol(symbol + ".NS");
+				holding.setSymbol(symbol);
 				holding.setExchange(holdingData.getExchange());
 				holding.setQuantity(holdingData.getQuantity());
 				holding.setAvergeBuyPrice(BigDecimal.valueOf(holdingData.getAverage_price()));
@@ -146,6 +156,56 @@ public class StockService {
 				holding.setPnlInPercent(BigDecimal.valueOf(holdingData.getPnl()).divide(holding.getBuyValue())
 						.multiply(BigDecimal.valueOf(100)).doubleValue());
 				holdingRepository.save(holding);
+			}
+		}
+	}
+
+	public void addTransactionsFromZerodhTradebook(Account account) throws ParseException, InterruptedException {
+		HttpHeaders headers = getZerodhaHeader(account, false);
+
+		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+		RestTemplate restTemplate = new RestTemplate();
+
+		Calendar previousDate = Calendar.getInstance();
+		previousDate.add(Calendar.DATE, -1);
+
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+		String yesterday = sdf.format(previousDate.getTime());
+
+		StringBuilder builder = new StringBuilder(zerodhaApiTradebookUrl);
+		builder.append("&from_date=").append(yesterday).append("&to_date=").append(yesterday);
+
+		ResponseEntity<TradebookResponse> response = null;
+		boolean isSuccessfulResponse = false;
+		int retryCount = 0;
+		while (!isSuccessfulResponse || retryCount++ >= 10) {
+			response = restTemplate.exchange(builder.toString(), HttpMethod.GET, requestEntity,
+					TradebookResponse.class);
+
+			if (response != null && response.getStatusCode().is2xxSuccessful()
+					&& "success".equalsIgnoreCase(response.getBody().getStatus())) {
+				isSuccessfulResponse = true;
+			}
+		}
+
+		if (response.getBody() != null && response.getBody().getData() != null
+				&& response.getBody().getData().getResult() != null
+				&& !response.getBody().getData().getResult().isEmpty()) {
+			List<TradebookResult> results = response.getBody().getData().getResult();
+
+			for (TradebookResult result : results) {
+
+				String symbol = getStockSymbol(result.getExchange(), result.getTradingsymbol());
+				StockInfo stockInfo = stockInfoRepository.getReferenceById(symbol);
+				Transaction transaction = new Transaction();
+				transaction.setTransactionId(result.getTrade_id());
+				transaction.setAccount(account);
+				transaction.setDate(sdf.parse(result.getTrade_date()));
+				transaction.setPrice(BigDecimal.valueOf(result.getPrice()));
+				transaction.setQuantity(result.getQuantity());
+				transaction.setStockInfo(stockInfo);
+				transaction.setTransactionType(TransactionType.valueOf(result.getTrade_type()));
+				transactionRepository.saveAndFlush(transaction);
 			}
 		}
 	}
@@ -223,80 +283,6 @@ public class StockService {
 		}
 	}
 
-	public List<Transaction> getTransactions(Account account) throws Exception {
-		TradebookResponse response = getTransactionsFromZerodha(account);
-
-		List<String> symbols = Lists.newArrayList();
-		response.getData().getResult().forEach(r -> {
-			symbols.add(r.getTradingsymbol() + ".NS");
-
-		});
-		System.out.println(YahooFinance.get(symbols.toArray(new String[symbols.size()]), false));
-		return null;
-	}
-
-	private TradebookResponse getTransactionsFromZerodha(Account account) throws InterruptedException {
-
-		byte[] secretKey = "ZSIVWGE4ITWC7LQ5T52NGAZARXBHPQRU".getBytes();
-		String totp = new GoogleAuthenticator(secretKey).generate(new Date(System.currentTimeMillis()));
-
-		ChromeOptions options = new ChromeOptions();
-		options.setHeadless(true);
-		WebDriver driver = new ChromeDriver(options);
-
-		driver.get(zerodhaConsoleUrl);
-
-		WebElement username = driver.findElement(By.id("userid"));
-		WebElement password = driver.findElement(By.id("password"));
-		WebElement login = driver.findElement(By.xpath("//button[text()='Login ']"));
-		username.sendKeys(account.getAccountNumber());
-		password.sendKeys(account.getPassword());
-		login.click();
-
-		Thread.sleep(5000);
-
-		// WebElement pin = driver.findElement(By.id("pin"));
-		// pin.sendKeys(account.getPin());
-		WebElement totpElement = driver.findElement(By.id("totp"));
-		totpElement.sendKeys(totp);
-		WebElement pinSubmit = driver.findElement(By.xpath("//button[text()='Continue ']"));
-		pinSubmit.click();
-
-		Thread.sleep(5000);
-
-		RestTemplate restTemplate = new RestTemplate();
-		HttpHeaders headers = new HttpHeaders();
-		headers.add("Cookie", driver.manage().getCookieNamed("session").toString());
-		headers.add("x-csrftoken", driver.manage().getCookieNamed("public_token").toString());
-		headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
-
-		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
-
-		Calendar previousDate = Calendar.getInstance();
-		previousDate.add(Calendar.DATE, -1);
-
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-		String yesterday = sdf.format(previousDate.getTime());
-
-		StringBuilder builder = new StringBuilder(zerodhaApiTradebookUrl);
-		builder.append("&from_date=").append(yesterday).append("&to_date=").append(yesterday);
-
-		ResponseEntity<TradebookResponse> response = restTemplate.exchange(builder.toString(), HttpMethod.GET,
-				requestEntity, TradebookResponse.class);
-
-		TradebookResponse tradebookResponse = response.getBody();
-
-		if (tradebookResponse.getData() != null && tradebookResponse.getData().getResult() != null
-				&& !tradebookResponse.getData().getResult().isEmpty()) {
-			List<TradebookResult> results = tradebookResponse.getData().getResult();
-			for (TradebookResult result : results) {
-				result.getExchange();
-			}
-		}
-
-		return tradebookResponse;
-	}
-
 	private HttpHeaders getZerodhaHeader(Account account, boolean isKite) throws InterruptedException {
 
 		String os = System.getProperty("os.name");
@@ -372,6 +358,12 @@ public class StockService {
 
 		return headers;
 
+	}
+
+	private String getStockSymbol(String exchange, String symbol) {
+		symbol = symbol.replaceAll("\\*", "");
+		String suffix = "NSE".equalsIgnoreCase(exchange) ? ".NS" : ".BO";
+		return symbol + suffix;
 	}
 
 }

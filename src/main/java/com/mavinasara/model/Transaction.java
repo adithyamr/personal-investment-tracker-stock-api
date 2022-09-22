@@ -1,5 +1,6 @@
 package com.mavinasara.model;
 
+import java.math.BigDecimal;
 import java.util.Date;
 
 import javax.persistence.Entity;
@@ -24,7 +25,7 @@ public class Transaction {
 
 	private Long quantity;
 
-	private Long price;
+	private BigDecimal price;
 
 	private Date date;
 
@@ -62,11 +63,11 @@ public class Transaction {
 		this.quantity = quantity;
 	}
 
-	public Long getPrice() {
+	public BigDecimal getPrice() {
 		return price;
 	}
 
-	public void setPrice(Long price) {
+	public void setPrice(BigDecimal price) {
 		this.price = price;
 	}
 

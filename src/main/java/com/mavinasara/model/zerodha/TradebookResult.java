@@ -6,7 +6,7 @@ public class TradebookResult {
 	private String trade_date;
 	private String order_execution_time;
 	private String trade_type;
-	private Integer quantity;
+	private Long quantity;
 	private Double price;
 	private String tradingsymbol;
 	private String exchange;
@@ -43,11 +43,11 @@ public class TradebookResult {
 		this.trade_type = trade_type;
 	}
 
-	public Integer getQuantity() {
+	public Long getQuantity() {
 		return quantity;
 	}
 
-	public void setQuantity(Integer quantity) {
+	public void setQuantity(Long quantity) {
 		this.quantity = quantity;
 	}
 
