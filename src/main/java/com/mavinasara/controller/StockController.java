@@ -1,6 +1,7 @@
 package com.mavinasara.controller;
 
 import java.io.IOException;
+import java.text.ParseException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,12 @@ public class StockController {
 	@PutMapping("/updateHolding")
 	public void updateHolding(@RequestBody String clinetId) throws IOException, InterruptedException {
 		stockService.updateHolding(clinetId);
+	}
+
+	@PutMapping("/updateTransaction")
+	public void updateTransaction(@RequestBody String clinetId)
+			throws IOException, InterruptedException, ParseException {
+		stockService.updateTransaction(clinetId);
 	}
 
 	@GetMapping

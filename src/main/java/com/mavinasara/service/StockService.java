@@ -2,8 +2,10 @@ package com.mavinasara.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collections;
@@ -11,9 +13,11 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang.text.StrSubstitutor;
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
@@ -34,10 +38,10 @@ import com.mavinasara.model.Account;
 import com.mavinasara.model.Holding;
 import com.mavinasara.model.StockInfo;
 import com.mavinasara.model.Transaction;
-import com.mavinasara.model.TransactionType;
 import com.mavinasara.model.angel.StockInformation;
 import com.mavinasara.model.zerodha.HoldingData;
 import com.mavinasara.model.zerodha.HoldingResponse;
+import com.mavinasara.model.zerodha.Pagination;
 import com.mavinasara.model.zerodha.TradebookResponse;
 import com.mavinasara.model.zerodha.TradebookResult;
 import com.mavinasara.repository.AccountRepository;
@@ -87,19 +91,23 @@ public class StockService {
 				Arrays.stream(stockList).filter(s -> s.getExpiry().trim().isBlank()).collect((Collectors.toSet())));
 		stockList = null;
 		for (StockInformation stockInformation : allStocks) {
-			String symbol = getStockSymbol(stockInformation.getName(), stockInformation.getExch_seg());
-			Stock stock = getStockInfo(symbol, false, null, null, null);
+			addStockInformation(stockInformation);
+		}
+	}
 
-			if (stock == null && !stockInformation.getName().equalsIgnoreCase(stockInformation.getSymbol())) {
-				symbol = getStockSymbol(stockInformation.getSymbol(), stockInformation.getExch_seg());
-				stock = getStockInfo(symbol, false, null, null, null);
-			}
+	private void addStockInformation(StockInformation stockInformation) {
+		String symbol = getStockSymbol(stockInformation.getExch_seg(), stockInformation.getName());
+		Stock stock = getStockInfo(symbol, false, null, null, null);
 
-			if (stock != null && StringUtils.isNotBlank(stock.getName())
-					&& !stock.getName().equalsIgnoreCase(stock.getSymbol().substring(stock.getSymbol().indexOf(".")))) {
-				StockInfo stockInfo = convertStockDetails(stock);
-				stockInfoRepository.saveAndFlush(stockInfo);
-			}
+		if (stock == null && !stockInformation.getName().equalsIgnoreCase(stockInformation.getSymbol())) {
+			symbol = getStockSymbol(stockInformation.getExch_seg(), stockInformation.getSymbol());
+			stock = getStockInfo(symbol, false, null, null, null);
+		}
+
+		if (stock != null && StringUtils.isNotBlank(stock.getName())
+				&& !stock.getName().equalsIgnoreCase(stock.getSymbol().substring(stock.getSymbol().indexOf(".")))) {
+			StockInfo stockInfo = convertStockDetails(stock);
+			stockInfoRepository.saveAndFlush(stockInfo);
 		}
 	}
 
@@ -153,61 +161,114 @@ public class StockService {
 				holding.setPresentValue(BigDecimal.valueOf(holdingData.getLast_price())
 						.multiply(BigDecimal.valueOf(holdingData.getQuantity())));
 				holding.setPnl(BigDecimal.valueOf(holdingData.getPnl()));
-				holding.setPnlInPercent(BigDecimal.valueOf(holdingData.getPnl()).divide(holding.getBuyValue())
-						.multiply(BigDecimal.valueOf(100)).doubleValue());
+				holding.setPnlInPercent(
+						BigDecimal.valueOf(holdingData.getPnl()).divide(holding.getBuyValue(), 2, RoundingMode.HALF_UP)
+								.multiply(BigDecimal.valueOf(100)).doubleValue());
 				holdingRepository.save(holding);
 			}
 		}
 	}
 
-	public void addTransactionsFromZerodhTradebook(Account account) throws ParseException, InterruptedException {
+	public void updateTransaction(String clientId) throws ParseException, InterruptedException {
+		Account account = accountRepository.getReferenceById(clientId);
 		HttpHeaders headers = getZerodhaHeader(account, false);
+
+		Date lastUpdated = transactionRepository.lastUpdated();
+
+		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+		Calendar fromDate = Calendar.getInstance();
+		if (lastUpdated == null) {
+			int year = fromDate.get(Calendar.YEAR);
+			String date = year + "-04-01";
+			Date pastDate = sdf.parse(date);
+			fromDate.setTime(pastDate);
+		} else {
+			fromDate.setTime(lastUpdated);
+			fromDate.add(Calendar.DATE, 1);
+		}
+
+		Calendar toDate = Calendar.getInstance();
+		toDate.add(Calendar.DATE, -1);
+
+		String from = sdf.format(fromDate.getTime());
+		String to = sdf.format(toDate.getTime());
+
+		List<TradebookResult> tradeResultList = getTradeResult(headers, from, to);
+
+		if (!tradeResultList.isEmpty()) {
+			for (TradebookResult result : tradeResultList) {
+
+				String symbol = getStockSymbol(result.getExchange(), result.getTradingsymbol());
+				Optional<StockInfo> stockInfo = stockInfoRepository.findById(symbol);
+
+				if (stockInfo.isEmpty()) {
+					StockInformation stockInformation = new StockInformation();
+					stockInformation.setSymbol(result.getTradingsymbol());
+					stockInformation.setExch_seg(result.getExchange());
+					stockInformation.setName(result.getTradingsymbol());
+					addStockInformation(stockInformation);
+					stockInfo = stockInfoRepository.findById(symbol);
+				}
+
+				if (stockInfo.isPresent()) {
+					Transaction transaction = new Transaction();
+					transaction.setTransactionId(result.getTrade_id());
+					transaction.setAccount(account);
+					transaction.setDate(sdf.parse(result.getTrade_date()));
+					transaction.setPrice(BigDecimal.valueOf(result.getPrice()));
+					transaction.setQuantity(result.getQuantity());
+					transaction.setStockInfo(stockInfo.get());
+					transaction.setTransactionType(result.getTrade_type());
+					transactionRepository.saveAndFlush(transaction);
+				}
+
+			}
+		}
+	}
+
+	private List<TradebookResult> getTradeResult(HttpHeaders headers, String fromDate, String toDate) {
+		List<TradebookResult> tradeResultList = new ArrayList<>();
+		int pageNumber = 1;
+		Long totalPages = null;
+		StringBuilder builder = new StringBuilder(zerodhaApiTradebookUrl);
+		builder.append(
+				"&from_date={FROMDATE}&to_date={TODATE}&page={PAGENUMBER}&sort_by=order_execution_time&sort_desc=false");
 
 		HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 		RestTemplate restTemplate = new RestTemplate();
 
-		Calendar previousDate = Calendar.getInstance();
-		previousDate.add(Calendar.DATE, -1);
-
-		SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
-		String yesterday = sdf.format(previousDate.getTime());
-
-		StringBuilder builder = new StringBuilder(zerodhaApiTradebookUrl);
-		builder.append("&from_date=").append(yesterday).append("&to_date=").append(yesterday);
-
 		ResponseEntity<TradebookResponse> response = null;
-		boolean isSuccessfulResponse = false;
-		int retryCount = 0;
-		while (!isSuccessfulResponse || retryCount++ >= 10) {
-			response = restTemplate.exchange(builder.toString(), HttpMethod.GET, requestEntity,
-					TradebookResponse.class);
 
-			if (response != null && response.getStatusCode().is2xxSuccessful()
-					&& "success".equalsIgnoreCase(response.getBody().getStatus())) {
-				isSuccessfulResponse = true;
+		boolean isFirstPage = true;
+
+		while (totalPages == null || totalPages-- >= 0L) {
+
+			boolean isSuccessfulResponse = false;
+			int retryCount = 0;
+
+			Map<String, String> replacementStrings = Map.of("PAGENUMBER", String.valueOf(pageNumber++), "FROMDATE",
+					fromDate, "TODATE", toDate);
+			StrSubstitutor sub = new StrSubstitutor(replacementStrings, "{", "}");
+
+			String apiString = sub.replace(builder);
+
+			while (!isSuccessfulResponse && retryCount++ <= 10) {
+				response = restTemplate.exchange(apiString, HttpMethod.GET, requestEntity, TradebookResponse.class);
+
+				if (response != null && response.getStatusCode().is2xxSuccessful()
+						&& "success".equalsIgnoreCase(response.getBody().getData().getState())) {
+					isSuccessfulResponse = true;
+					if (isFirstPage) {
+						isFirstPage = false;
+						Pagination pagination = response.getBody().getData().getPagination();
+						totalPages = pagination.getTotal_pages();
+					}
+
+					tradeResultList.addAll(response.getBody().getData().getResult());
+				}
 			}
 		}
-
-		if (response.getBody() != null && response.getBody().getData() != null
-				&& response.getBody().getData().getResult() != null
-				&& !response.getBody().getData().getResult().isEmpty()) {
-			List<TradebookResult> results = response.getBody().getData().getResult();
-
-			for (TradebookResult result : results) {
-
-				String symbol = getStockSymbol(result.getExchange(), result.getTradingsymbol());
-				StockInfo stockInfo = stockInfoRepository.getReferenceById(symbol);
-				Transaction transaction = new Transaction();
-				transaction.setTransactionId(result.getTrade_id());
-				transaction.setAccount(account);
-				transaction.setDate(sdf.parse(result.getTrade_date()));
-				transaction.setPrice(BigDecimal.valueOf(result.getPrice()));
-				transaction.setQuantity(result.getQuantity());
-				transaction.setStockInfo(stockInfo);
-				transaction.setTransactionType(TransactionType.valueOf(result.getTrade_type()));
-				transactionRepository.saveAndFlush(transaction);
-			}
-		}
+		return tradeResultList;
 	}
 
 	private StockInfo convertStockDetails(Stock stock) {

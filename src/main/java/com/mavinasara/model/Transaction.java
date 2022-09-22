@@ -9,6 +9,8 @@ import javax.persistence.Id;
 import javax.persistence.JoinColumn;
 import javax.persistence.ManyToOne;
 
+import org.hibernate.annotations.UpdateTimestamp;
+
 @Entity
 public class Transaction {
 
@@ -29,7 +31,10 @@ public class Transaction {
 
 	private Date date;
 
-	private TransactionType transactionType;
+	private String transactionType;
+
+	@UpdateTimestamp
+	private Date lastUpdated;
 
 	public String getTransactionId() {
 		return transactionId;
@@ -79,12 +84,20 @@ public class Transaction {
 		this.date = date;
 	}
 
-	public TransactionType getTransactionType() {
+	public String getTransactionType() {
 		return transactionType;
 	}
 
-	public void setTransactionType(TransactionType transactionType) {
+	public void setTransactionType(String transactionType) {
 		this.transactionType = transactionType;
+	}
+
+	public Date getLastUpdated() {
+		return lastUpdated;
+	}
+
+	public void setLastUpdated(Date lastUpdated) {
+		this.lastUpdated = lastUpdated;
 	}
 
 }
