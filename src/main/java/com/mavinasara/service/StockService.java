@@ -1,6 +1,5 @@
 package com.mavinasara.service;
 
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.ParseException;
@@ -51,7 +50,6 @@ import com.mavinasara.repository.TransactionRepository;
 
 import dev.turingcomplete.kotlinonetimepassword.GoogleAuthenticator;
 import yahoofinance.Stock;
-import yahoofinance.YahooFinance;
 import yahoofinance.histquotes.Interval;
 
 @Service
@@ -84,6 +82,10 @@ public class StockService {
 	@Autowired
 	private AccountRepository accountRepository;
 
+	public Map<String, Stock> getHistory(List<String> symbolList, Date fromDate, Date toDate, Interval interval) {
+		return Helper.getStockInfo(symbolList, false, fromDate, toDate, interval);
+	}
+
 	public void fetchAndUpdateStocks() {
 		RestTemplate restTemplate = new RestTemplate();
 		StockInformation[] stockList = restTemplate.getForObject(apiListStocksUrl, StockInformation[].class);
@@ -96,17 +98,17 @@ public class StockService {
 	}
 
 	private void addStockInformation(StockInformation stockInformation) {
-		String symbol = getStockSymbol(stockInformation.getExch_seg(), stockInformation.getName());
-		Stock stock = getStockInfo(symbol, false, null, null, null);
+		String symbol = Helper.getStockSymbol(stockInformation.getExch_seg(), stockInformation.getName());
+		Stock stock = Helper.getStockInfo(symbol, false, null, null, null);
 
 		if (stock == null && !stockInformation.getName().equalsIgnoreCase(stockInformation.getSymbol())) {
-			symbol = getStockSymbol(stockInformation.getExch_seg(), stockInformation.getSymbol());
-			stock = getStockInfo(symbol, false, null, null, null);
+			symbol = Helper.getStockSymbol(stockInformation.getExch_seg(), stockInformation.getSymbol());
+			stock = Helper.getStockInfo(symbol, false, null, null, null);
 		}
 
 		if (stock != null && StringUtils.isNotBlank(stock.getName())
 				&& !stock.getName().equalsIgnoreCase(stock.getSymbol().substring(stock.getSymbol().indexOf(".")))) {
-			StockInfo stockInfo = convertStockDetails(stock);
+			StockInfo stockInfo = Helper.convertStockDetails(stock);
 			stockInfoRepository.saveAndFlush(stockInfo);
 		}
 	}
@@ -114,11 +116,11 @@ public class StockService {
 	public void updateStockDetails() {
 		List<StockInfo> stocks = stockInfoRepository.findAll();
 		for (StockInfo stockInfo : stocks) {
-			Stock stock = getStockInfo(stockInfo.getSymbol(), false, null, null, null);
+			Stock stock = Helper.getStockInfo(stockInfo.getSymbol(), false, null, null, null);
 			if (stock == null) {
 				stockInfoRepository.delete(stockInfo);
 			} else {
-				StockInfo updatedStockInfo = convertStockDetails(stock);
+				StockInfo updatedStockInfo = Helper.convertStockDetails(stock);
 				stockInfoRepository.saveAndFlush(updatedStockInfo);
 			}
 		}
@@ -146,9 +148,10 @@ public class StockService {
 
 		if (response.getBody() != null && response.getBody().getData() != null
 				&& !response.getBody().getData().isEmpty()) {
+			holdingRepository.deleteAll();
 			List<HoldingData> holdings = response.getBody().getData();
 			for (HoldingData holdingData : holdings) {
-				String symbol = getStockSymbol(holdingData.getExchange(), holdingData.getTradingsymbol());
+				String symbol = Helper.getStockSymbol(holdingData.getExchange(), holdingData.getTradingsymbol());
 				Holding holding = new Holding();
 				holding.setAccount(account);
 				holding.setSymbol(symbol);
@@ -167,6 +170,18 @@ public class StockService {
 				holdingRepository.save(holding);
 			}
 		}
+
+		BigDecimal investedValue = holdingRepository.investedValue();
+		BigDecimal presentValue = holdingRepository.presentValue();
+		BigDecimal pnl = presentValue.subtract(investedValue);
+		BigDecimal pnlPercentage = pnl.divide(investedValue, 2, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
+
+		account.setInvestedValue(investedValue.doubleValue());
+		account.setCurrentValue(presentValue.doubleValue());
+		account.setPnl(pnl.doubleValue());
+		account.setPnlPercentage(pnlPercentage.doubleValue());
+		accountRepository.save(account);
+
 	}
 
 	public void updateTransaction(String clientId) throws ParseException, InterruptedException {
@@ -198,7 +213,7 @@ public class StockService {
 		if (!tradeResultList.isEmpty()) {
 			for (TradebookResult result : tradeResultList) {
 
-				String symbol = getStockSymbol(result.getExchange(), result.getTradingsymbol());
+				String symbol = Helper.getStockSymbol(result.getExchange(), result.getTradingsymbol());
 				Optional<StockInfo> stockInfo = stockInfoRepository.findById(symbol);
 
 				if (stockInfo.isEmpty()) {
@@ -269,79 +284,6 @@ public class StockService {
 			}
 		}
 		return tradeResultList;
-	}
-
-	private StockInfo convertStockDetails(Stock stock) {
-		StockInfo stockInfo = new StockInfo();
-		stockInfo.setSymbol(stock.getSymbol());
-		stockInfo.setName(stock.getName());
-		stockInfo.setExchange(stock.getStockExchange());
-
-		if (stock.getDividend() != null) {
-			stockInfo.setAnnualYield(stock.getDividend().getAnnualYield());
-			stockInfo.setAnnualYieldPercent(stock.getDividend().getAnnualYieldPercent());
-			stockInfo.setDividendExDate(stock.getDividend().getExDate());
-		}
-		if (stock.getStats() != null) {
-			stockInfo.setMarketCap(stock.getStats().getMarketCap());
-		}
-
-		if (stock.getQuote() != null) {
-			stockInfo.setAvgVolume(stock.getQuote().getAvgVolume());
-			stockInfo.setPrice(stock.getQuote().getPrice());
-			stockInfo.setPriceAvg200(stock.getQuote().getChangeFromAvg200());
-			stockInfo.setPriceAvg50(stock.getQuote().getChangeFromAvg50());
-			stockInfo.setYearHigh(stock.getQuote().getYearHigh());
-			stockInfo.setYearLow(stock.getQuote().getYearLow());
-		}
-		return stockInfo;
-	}
-
-	public Map<String, Stock> getHistory(List<String> symbolList, Date fromDate, Date toDate, Interval interval) {
-		return getStockInfo(symbolList, false, fromDate, toDate, interval);
-	}
-
-	private Map<String, Stock> getStockInfo(List<String> symbolList, boolean includeHistorical, Date fromDate,
-			Date toDate, Interval interval) {
-		try {
-			String[] symbols = symbolList.stream().toArray(String[]::new);
-			if (fromDate == null) {
-				return YahooFinance.get(symbols, includeHistorical);
-			}
-
-			Calendar from = Calendar.getInstance();
-			from.setTime(fromDate);
-
-			Calendar to = Calendar.getInstance();
-			if (toDate != null) {
-				to.setTime(toDate);
-			}
-
-			return YahooFinance.get(symbols, from, to, interval);
-		} catch (IOException e) {
-			return null;
-		}
-	}
-
-	private Stock getStockInfo(String symbol, boolean includeHistorical, Date fromDate, Date toDate,
-			Interval interval) {
-		try {
-			if (fromDate == null) {
-				return YahooFinance.get(symbol, includeHistorical);
-			}
-
-			Calendar from = Calendar.getInstance();
-			from.setTime(fromDate);
-
-			Calendar to = Calendar.getInstance();
-			if (toDate != null) {
-				to.setTime(toDate);
-			}
-
-			return YahooFinance.get(symbol, from, to, interval);
-		} catch (IOException e) {
-			return null;
-		}
 	}
 
 	private HttpHeaders getZerodhaHeader(Account account, boolean isKite) throws InterruptedException {
@@ -418,13 +360,6 @@ public class StockService {
 		}
 
 		return headers;
-
-	}
-
-	private String getStockSymbol(String exchange, String symbol) {
-		symbol = symbol.replaceAll("\\*", "");
-		String suffix = "NSE".equalsIgnoreCase(exchange) ? ".NS" : ".BO";
-		return symbol + suffix;
 	}
 
 }

@@ -33,6 +33,14 @@ public class Account {
 	@JoinColumn(name = "accountNumber")
 	private List<Transaction> transactions;
 
+	private Double investedValue;
+
+	private Double currentValue;
+
+	private Double pnl;
+
+	private Double pnlPercentage;
+
 	public String getAccountNumber() {
 		return accountNumber;
 	}
@@ -87,6 +95,38 @@ public class Account {
 
 	public void setTransactions(List<Transaction> transactions) {
 		this.transactions = transactions;
+	}
+
+	public Double getInvestedValue() {
+		return investedValue;
+	}
+
+	public void setInvestedValue(Double investedValue) {
+		this.investedValue = investedValue;
+	}
+
+	public Double getCurrentValue() {
+		return currentValue;
+	}
+
+	public void setCurrentValue(Double currentValue) {
+		this.currentValue = currentValue;
+	}
+
+	public Double getPnl() {
+		return pnl;
+	}
+
+	public void setPnl(Double pnl) {
+		this.pnl = pnl;
+	}
+
+	public Double getPnlPercentage() {
+		return pnlPercentage;
+	}
+
+	public void setPnlPercentage(Double pnlPercentage) {
+		this.pnlPercentage = pnlPercentage;
 	}
 
 }
